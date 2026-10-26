@@ -32,6 +32,7 @@ jobs:
       res.stdout contains 'actions[0] tap: no element matches text="No Such Row" within'
 
 - name: Settings
+  id: settings
   needs: [failures]
   steps:
   - name: Open Network & internet
@@ -65,3 +66,37 @@ jobs:
       - name: screenshot
         id: home
     test: res.code == 0 && res.filepaths.home endsWith ".png"
+
+# ADBKeyBoard has to be installed on the emulator, as the CI does.
+- name: Typing
+  needs: [settings]
+  steps:
+  - name: Type into the search of Settings
+    uses: android
+    with:
+      app: "{{vars.settings}}"
+      device: "{{vars.device}}"
+      timeout: 1m
+      actions:
+      - name: launch
+      - name: tap
+        selector: text="Search settings"
+      # ASCII goes through input text, and the rest through ADBKeyBoard.
+      - name: type
+        selector: class=EditText
+        value: Wi-Fi
+      - name: type
+        selector: class=EditText
+        value: 日本語
+      - name: text
+        id: query
+        selector: class=EditText
+    test: res.code == 0 && res.results.query == "Wi-Fi日本語"
+
+  - name: The input method is put back
+    uses: shell
+    with:
+      cmd: |
+        adb=$(command -v adb || echo "$ANDROID_HOME/platform-tools/adb")
+        "$adb" shell settings get secure default_input_method
+    test: res.code == 0 && !(res.stdout contains "adbkeyboard")

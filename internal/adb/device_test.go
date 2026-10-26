@@ -24,10 +24,16 @@ func (f *fakeAdb) run(ctx context.Context, args ...string) ([]byte, error) {
 			return nil, err
 		}
 	}
-	for prefix, out := range f.replies {
-		if strings.HasPrefix(key, prefix) {
-			return []byte(out), nil
+	// The longest prefix wins, so that ime list -s -a and ime list -s
+	// answer apart.
+	best := ""
+	for prefix := range f.replies {
+		if strings.HasPrefix(key, prefix) && len(prefix) > len(best) {
+			best = prefix
 		}
+	}
+	if best != "" {
+		return []byte(f.replies[best]), nil
 	}
 	return nil, nil
 }

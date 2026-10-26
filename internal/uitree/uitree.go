@@ -27,8 +27,10 @@ type Node struct {
 	Clickable bool
 	Checked   bool
 	Selected  bool
-	Password  bool
-	Children  []*Node
+	// Focused is the element that takes what is typed.
+	Focused  bool
+	Password bool
+	Children []*Node
 }
 
 // Rect is the bounds of a node on the screen, in pixels.
@@ -100,6 +102,8 @@ func convert(x xmlNode) (*Node, error) {
 			n.Checked = a.Value == "true"
 		case "selected":
 			n.Selected = a.Value == "true"
+		case "focused":
+			n.Focused = a.Value == "true"
 		case "password":
 			n.Password = a.Value == "true"
 		case "bounds":
@@ -197,6 +201,26 @@ func Find(root *Node, m Match, index int) (*Node, error) {
 	return nil, ErrNoMatch
 }
 
+// Focused returns the node that has the focus, or nil.
+func Focused(root *Node) *Node {
+	var found *Node
+	var walk func(*Node)
+	walk = func(n *Node) {
+		for _, c := range n.Children {
+			if found != nil {
+				return
+			}
+			if c.Focused {
+				found = c
+				return
+			}
+			walk(c)
+		}
+	}
+	walk(root)
+	return found
+}
+
 // Format writes the nodes under root, one a line and indented by depth,
 // with what a selector can name.
 func Format(root *Node) string {
@@ -225,6 +249,9 @@ func Format(root *Node) string {
 			}
 			if c.Selected {
 				b.WriteString(" selected")
+			}
+			if c.Focused {
+				b.WriteString(" focused")
 			}
 			b.WriteString("\n")
 			walk(c, depth+1)

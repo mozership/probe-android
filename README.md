@@ -18,6 +18,7 @@ Probe only takes a full 40-character commit SHA there. The notes of each [releas
 | adb | The Android SDK Platform-Tools, on PATH or in `$ANDROID_HOME/platform-tools` |
 | A booted emulator or a device | `emulator -avd <name>`, or a device with USB debugging on. `adb devices` lists it as `device` |
 | The app under test | Installed on it: `adb install path/to/app.apk` |
+| [ADBKeyBoard](https://github.com/senzhk/ADBKeyBoard), to type other than ASCII | Installed on it: `adb install keyboardservice-debug.apk`, from its [releases](https://github.com/senzhk/ADBKeyBoard/releases). See [Typing](#typing) |
 
 The action does not boot the emulator or install the app. Do that in a step of its own, such as a `shell` step, so that a failed boot is not taken for a failed test.
 
@@ -63,7 +64,7 @@ Each entry of `actions` names its action in `name`:
 | `terminate` | | Ends the app |
 | `back` | | Presses the back button |
 | `tap` | `selector` | Taps the middle of the element |
-| `type` | `selector`, `value` | Taps the element and types `value` into it. `input text` types printable ASCII alone |
+| `type` | `selector`, `value` | Taps the element and types `value` into it. See [Typing](#typing) |
 | `wait` | `selector` | Waits until the element is on the screen |
 | `text` | `selector`, `id` | Reads the element's text, or its content description when it has no text, into `res.results` |
 | `tree` | `id` | Reads the screen into `res.results`, an element a line, with what a selector can name. Run a step with it under `-v` to see it |
@@ -76,6 +77,18 @@ An action on an element reads the screen until the element is on it, for what is
 ```
 actions[1] tap: no element matches text="No Such Row" within 5.0s
 ```
+
+### Typing
+
+`type` types printable ASCII with `input text`, which any device has. `input text` cannot type other text, such as Japanese, nor `%s`, which it reads as a space: `type` types such text with [ADBKeyBoard](https://github.com/senzhk/ADBKeyBoard), an input method that types the text adb sends it.
+
+```yaml
+- name: type
+  selector: class=EditText
+  value: 日本語
+```
+
+ADBKeyBoard has to be installed on the device; the action does not install it, and says so when it is not there. It is not set up beyond that: the action makes it the input method for the step, enabling it when it is not, and puts the input method back as it was once the step is over, even when the step fails. It reads the screen until the focused element has the text, and sends it again when it does not, as ADBKeyBoard drops text it is sent before it is up.
 
 ### Selectors
 

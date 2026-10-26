@@ -15,6 +15,7 @@ import (
 
 func init() {
 	pollInterval = time.Millisecond
+	imeSettle = 20 * time.Millisecond
 }
 
 const screenXML = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node class="android.widget.FrameLayout" package="com.android.settings" enabled="true" bounds="[0,0][1080,2400]"><node text="Network &amp; internet" resource-id="android:id/title" class="android.widget.TextView" enabled="true" bounds="[200,540][700,600]" /><node text="" resource-id="com.android.settings:id/search" class="android.widget.EditText" content-desc="Search settings" enabled="true" bounds="[0,100][1080,200]" /><node text="Hidden" resource-id="android:id/title" class="android.widget.TextView" enabled="true" bounds="[0,0][0,0]" /></node></hierarchy>`
@@ -28,6 +29,17 @@ type fakeDevice struct {
 	dumpErr error
 	png     []byte
 	fail    map[string]error
+
+	// field, when edit is set, is the text of the one element of the
+	// screen, an edit text that has the focus; password makes it one.
+	edit     bool
+	field    string
+	password bool
+	// noKeyboard is a device without ADBKeyBoard, and drop the number of
+	// broadcasts it drops before it is up.
+	noKeyboard bool
+	drop       int
+	restoreErr error
 }
 
 const notReady = "<not ready>"
@@ -46,6 +58,9 @@ func (f *fakeDevice) Dump(ctx context.Context) ([]byte, error) {
 	if f.dumpErr != nil {
 		return nil, f.dumpErr
 	}
+	if f.edit {
+		return fmt.Appendf(nil, `<hierarchy><node class="android.widget.EditText" resource-id="com.example:id/name" text=%q password="%v" focused="true" enabled="true" bounds="[0,100][1080,200]" /></hierarchy>`, f.field, f.password), nil
+	}
 	d := f.dumps[0]
 	if len(f.dumps) > 1 {
 		f.dumps = f.dumps[1:]
@@ -61,7 +76,11 @@ func (f *fakeDevice) Tap(ctx context.Context, x, y int) error {
 }
 
 func (f *fakeDevice) Type(ctx context.Context, text string) error {
-	return f.record("type " + text)
+	if err := f.record("type " + text); err != nil {
+		return err
+	}
+	f.field += text
+	return nil
 }
 
 func (f *fakeDevice) Key(ctx context.Context, code string) error {
@@ -82,6 +101,34 @@ func (f *fakeDevice) Start(ctx context.Context, activity string, fresh bool) err
 
 func (f *fakeDevice) ForceStop(ctx context.Context, pkg string) error {
 	return f.record("force-stop " + pkg)
+}
+
+func (f *fakeDevice) UseADBKeyBoard(ctx context.Context) (func(context.Context) error, error) {
+	if f.noKeyboard {
+		return nil, adb.ErrNoADBKeyBoard
+	}
+	if err := f.record("use-adbkeyboard"); err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		f.calls = append(f.calls, "restore-ime")
+		return f.restoreErr
+	}, nil
+}
+
+func (f *fakeDevice) BroadcastText(ctx context.Context, text string) error {
+	if err := f.record("broadcast " + text); err != nil {
+		return err
+	}
+	if f.drop > 0 {
+		f.drop--
+		return nil
+	}
+	f.field += text
+	return nil
 }
 
 func newRes() *Res {
@@ -240,5 +287,112 @@ func TestRunActionsStopsAtTheFirstFailure(t *testing.T) {
 	}
 	if len(f.calls) != 1 {
 		t.Errorf("calls = %q, want none after the failure", f.calls)
+	}
+}
+
+// typeCalls are the calls but the dumps, which come as often as the
+// screen is read.
+func typeCalls(f *fakeDevice) []string {
+	var s []string
+	for _, c := range f.calls {
+		if c != "dump" {
+			s = append(s, c)
+		}
+	}
+	return s
+}
+
+func TestTypeWithADBKeyBoard(t *testing.T) {
+	f := &fakeDevice{edit: true, field: "Wi-Fi ", drop: 2}
+	res := newRes()
+	err := runActions(context.Background(), f, req(t, "",
+		map[string]any{"name": "type", "selector": "name", "value": "日本"},
+		map[string]any{"name": "type", "selector": "name", "value": " ok"},
+		map[string]any{"name": "type", "selector": "name", "value": "語"},
+		map[string]any{"name": "text", "id": "name", "selector": "name"},
+	), res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"tap 540 150", "use-adbkeyboard", "broadcast 日本", "broadcast 日本", "broadcast 日本",
+		"tap 540 150", "type  ok",
+		"tap 540 150", "broadcast 語",
+		"restore-ime",
+	}
+	if got := typeCalls(f); !reflect.DeepEqual(got, want) {
+		t.Errorf("calls =\n%q\nwant\n%q", got, want)
+	}
+	if got := res.Results["name"]; got != "Wi-Fi 日本 ok語" {
+		t.Errorf("the field has %q, want each text typed once", got)
+	}
+}
+
+func TestTypeASCIIDoesNotSwitch(t *testing.T) {
+	f := &fakeDevice{edit: true}
+	if err := runActions(context.Background(), f, req(t, "", map[string]any{"name": "type", "selector": "name", "value": "hello"}), newRes()); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range f.calls {
+		if c == "use-adbkeyboard" || c == "restore-ime" {
+			t.Errorf("ASCII text switched the input method: %q", f.calls)
+		}
+	}
+}
+
+func TestTypeWithoutADBKeyBoard(t *testing.T) {
+	f := &fakeDevice{edit: true, noKeyboard: true}
+	err := runActions(context.Background(), f, req(t, "", map[string]any{"name": "type", "selector": "name", "value": "100%sure"}), newRes())
+	if err == nil || !errors.Is(err, adb.ErrNoADBKeyBoard) ||
+		!strings.HasPrefix(err.Error(), `actions[0] type: input text types printable ASCII alone, so "100%sure" needs ADBKeyBoard: ADBKeyBoard is not installed`) {
+		t.Errorf("runActions = %v", err)
+	}
+}
+
+func TestTypeWithADBKeyBoardThatNeverTypes(t *testing.T) {
+	f := &fakeDevice{edit: true, field: "x", drop: 1 << 30}
+	err := runActions(context.Background(), f, req(t, "100ms", map[string]any{"name": "type", "selector": "name", "value": "日本"}), newRes())
+	if err == nil || !strings.Contains(err.Error(), `ADBKeyBoard did not type "日本" into the focused element, which has "x"`) {
+		t.Errorf("runActions = %v", err)
+	}
+	if got := typeCalls(f); got[len(got)-1] != "restore-ime" {
+		t.Errorf("the input method was not put back after the failure: %q", got)
+	}
+}
+
+func TestTypePasswordWithADBKeyBoard(t *testing.T) {
+	f := &fakeDevice{edit: true, password: true}
+	if err := runActions(context.Background(), f, req(t, "", map[string]any{"name": "type", "selector": "name", "value": "パス"}), newRes()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"tap 540 150", "use-adbkeyboard", "broadcast パス", "restore-ime"}
+	if got := typeCalls(f); !reflect.DeepEqual(got, want) {
+		t.Errorf("calls = %q, want one broadcast, as a password field shows nothing to check", got)
+	}
+}
+
+func TestRestoreIMEError(t *testing.T) {
+	f := &fakeDevice{edit: true, restoreErr: errors.New("ime set: Unknown input method")}
+	err := runActions(context.Background(), f, req(t, "", map[string]any{"name": "type", "selector": "name", "value": "日本"}), newRes())
+	if err == nil || err.Error() != "putting the input method back after ADBKeyBoard: ime set: Unknown input method" {
+		t.Errorf("runActions = %v", err)
+	}
+
+	// The error of the action that failed comes first.
+	f = &fakeDevice{edit: true, restoreErr: errors.New("ime set: Unknown input method"), fail: map[string]error{"tap": errors.New("adb: device offline")}}
+	err = runActions(context.Background(), f, req(t, "",
+		map[string]any{"name": "type", "selector": "name", "value": "日本"},
+		map[string]any{"name": "type", "selector": "name", "value": "語"},
+	), newRes())
+	if err == nil || !strings.Contains(err.Error(), "device offline") {
+		t.Errorf("runActions = %v", err)
+	}
+}
+
+func TestRestoreIMEAfterTheTimeout(t *testing.T) {
+	f := &fakeDevice{edit: true, drop: 1 << 30}
+	_ = runActions(context.Background(), f, req(t, "50ms", map[string]any{"name": "type", "selector": "name", "value": "日本"}), newRes())
+	if got := typeCalls(f); got[len(got)-1] != "restore-ime" {
+		t.Errorf("the input method was not put back once the step's timeout ran out: %q", got)
 	}
 }
