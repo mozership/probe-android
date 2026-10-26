@@ -85,8 +85,6 @@ jobs:
       - name: type
         selector: class=EditText
         value: Wi-Fi
-      - name: tree
-        id: debug
       - name: type
         selector: class=EditText
         value: 日本語
