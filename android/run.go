@@ -195,7 +195,9 @@ func broadcastText(ctx context.Context, d device, text string) error {
 		}
 		before = f.Text
 	}
-	got := before
+	// focus is what had the focus at the last read, for the message when
+	// the text does not show.
+	focus := "no element"
 	for {
 		if err := d.BroadcastText(ctx, text); err != nil {
 			return err
@@ -204,7 +206,7 @@ func broadcastText(ctx context.Context, d device, text string) error {
 		for time.Now().Before(deadline) {
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("ADBKeyBoard did not type %q into the focused element, which has %q: is the element one to type into?", text, got)
+				return fmt.Errorf("ADBKeyBoard did not type %q: %s had the focus", text, focus)
 			case <-time.After(pollInterval):
 			}
 			root, err := dumpOnce(ctx, d)
@@ -216,11 +218,11 @@ func broadcastText(ctx context.Context, d device, text string) error {
 			}
 			f := uitree.Focused(root)
 			if f == nil {
-				got = ""
+				focus = "no element"
 				continue
 			}
-			got = f.Text
-			if got != before && strings.Contains(got, text) {
+			focus = f.String()
+			if f.Text != before && strings.Contains(f.Text, text) {
 				return nil
 			}
 		}

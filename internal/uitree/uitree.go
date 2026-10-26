@@ -229,35 +229,42 @@ func Format(root *Node) string {
 	walk = func(n *Node, depth int) {
 		for _, c := range n.Children {
 			b.WriteString(strings.Repeat("  ", depth))
-			b.WriteString(shortClass(c.Class))
-			if c.ResourceID != "" {
-				fmt.Fprintf(&b, " id=%s", c.ResourceID)
-			}
-			if c.Text != "" {
-				fmt.Fprintf(&b, " text=%q", c.Text)
-			}
-			if c.Desc != "" {
-				fmt.Fprintf(&b, " desc=%q", c.Desc)
-			}
-			b.WriteString(" ")
-			b.WriteString(c.Bounds.String())
-			if !c.Enabled {
-				b.WriteString(" disabled")
-			}
-			if c.Checked {
-				b.WriteString(" checked")
-			}
-			if c.Selected {
-				b.WriteString(" selected")
-			}
-			if c.Focused {
-				b.WriteString(" focused")
-			}
+			b.WriteString(c.String())
 			b.WriteString("\n")
 			walk(c, depth+1)
 		}
 	}
 	walk(root, 0)
+	return b.String()
+}
+
+// String is the node as Format writes it, on a line of its own.
+func (n *Node) String() string {
+	var b strings.Builder
+	b.WriteString(shortClass(n.Class))
+	if n.ResourceID != "" {
+		fmt.Fprintf(&b, " id=%s", n.ResourceID)
+	}
+	if n.Text != "" {
+		fmt.Fprintf(&b, " text=%q", n.Text)
+	}
+	if n.Desc != "" {
+		fmt.Fprintf(&b, " desc=%q", n.Desc)
+	}
+	b.WriteString(" ")
+	b.WriteString(n.Bounds.String())
+	if !n.Enabled {
+		b.WriteString(" disabled")
+	}
+	if n.Checked {
+		b.WriteString(" checked")
+	}
+	if n.Selected {
+		b.WriteString(" selected")
+	}
+	if n.Focused {
+		b.WriteString(" focused")
+	}
 	return b.String()
 }
 

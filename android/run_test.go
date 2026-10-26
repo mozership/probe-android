@@ -352,7 +352,7 @@ func TestTypeWithoutADBKeyBoard(t *testing.T) {
 func TestTypeWithADBKeyBoardThatNeverTypes(t *testing.T) {
 	f := &fakeDevice{edit: true, field: "x", drop: 1 << 30}
 	err := runActions(context.Background(), f, req(t, "100ms", map[string]any{"name": "type", "selector": "name", "value": "日本"}), newRes())
-	if err == nil || !strings.Contains(err.Error(), `ADBKeyBoard did not type "日本" into the focused element, which has "x"`) {
+	if err == nil || !strings.Contains(err.Error(), `ADBKeyBoard did not type "日本": EditText id=com.example:id/name text="x" [0,100][1080,200] focused had the focus`) {
 		t.Errorf("runActions = %v", err)
 	}
 	if got := typeCalls(f); got[len(got)-1] != "restore-ime" {
