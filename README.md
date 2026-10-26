@@ -22,6 +22,8 @@ Probe only takes a full 40-character commit SHA there. The notes of each [releas
 
 The action does not boot the emulator or install the app. Do that in a step of its own, such as a `shell` step, so that a failed boot is not taken for a failed test.
 
+Reading the screen with uiautomator hides the soft keyboard, as each action on an element does. An element keeps the focus, and `type` types into it all the same, but an app that acts on the keyboard going, as the search of Settings closes, cannot be driven past it.
+
 Turn the animations of the emulator off, as `adb shell settings put global animator_duration_scale 0` and its `window_` and `transition_` siblings do: uiautomator cannot read a screen that is still moving, so the action waits for it.
 
 ## Basic Syntax
@@ -88,7 +90,7 @@ actions[1] tap: no element matches text="No Such Row" within 5.0s
   value: 日本語
 ```
 
-ADBKeyBoard has to be installed on the device; the action does not install it, and says so when it is not there. It is not set up beyond that: a step that types such text makes it the input method before its first action, enabling it when it is not, and puts the input method back as it was once the step is over, even when the step fails. The switch comes first, as an app can take a switch of the input method for the user leaving: the search of Settings closes on one. It reads the screen until the focused element has the text, and sends it again when it does not, as ADBKeyBoard drops text it is sent before it is up.
+ADBKeyBoard has to be installed on the device; the action does not install it, and says so when it is not there. It is not set up beyond that: a step that types such text makes it the input method before its first action, enabling it when it is not, and puts the input method back as it was once the step is over, even when the step fails. The switch comes first, as the input method changing under an app can move it on, as the keyboard going can. It reads the screen until the focused element has the text, and sends it again when it does not, as ADBKeyBoard drops text it is sent before it is up.
 
 ### Selectors
 

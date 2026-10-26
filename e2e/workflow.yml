@@ -71,7 +71,10 @@ jobs:
 - name: Typing
   needs: [settings]
   steps:
-  - name: Type into the search of Settings
+  # Each action reads the screen with uiautomator, which hides the soft
+  # keyboard, and the search of Settings closes with it, so the name of a
+  # network to add is typed into instead.
+  - name: Type the name of a network
     uses: android
     with:
       app: "{{vars.settings}}"
@@ -80,18 +83,22 @@ jobs:
       actions:
       - name: launch
       - name: tap
-        selector: text="Search settings"
+        selector: text="Network & internet"
+      - name: tap
+        selector: text=Internet
+      - name: tap
+        selector: text="Add network"
       # ASCII goes through input text, and the rest through ADBKeyBoard.
       - name: type
-        selector: class=EditText
+        selector: id=ssid
         value: Wi-Fi
       - name: type
-        selector: class=EditText
+        selector: id=ssid
         value: 日本語
       - name: text
-        id: query
-        selector: class=EditText
-    test: res.code == 0 && res.results.query == "Wi-Fi日本語"
+        id: ssid
+        selector: id=ssid
+    test: res.code == 0 && res.results.ssid == "Wi-Fi日本語"
 
   - name: The input method is put back
     uses: shell

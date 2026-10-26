@@ -78,8 +78,8 @@ func runActions(ctx context.Context, d device, req *Req, res *Res) (err error) {
 		}
 	}()
 	// A step that types text input text cannot switches to ADBKeyBoard
-	// before its first action, not as it types: an app can take the
-	// switch for the user leaving, as the search of Settings closes.
+	// before its first action, not as it types, so that the input method
+	// does not change under the screen the step is on.
 	for i, a := range req.Actions {
 		if a.Name != "type" || adb.CanInputText(a.Value) {
 			continue
