@@ -88,7 +88,7 @@ actions[1] tap: no element matches text="No Such Row" within 5.0s
   value: 日本語
 ```
 
-ADBKeyBoard has to be installed on the device; the action does not install it, and says so when it is not there. It is not set up beyond that: the action makes it the input method for the step, enabling it when it is not, and puts the input method back as it was once the step is over, even when the step fails. It reads the screen until the focused element has the text, and sends it again when it does not, as ADBKeyBoard drops text it is sent before it is up.
+ADBKeyBoard has to be installed on the device; the action does not install it, and says so when it is not there. It is not set up beyond that: a step that types such text makes it the input method before its first action, enabling it when it is not, and puts the input method back as it was once the step is over, even when the step fails. The switch comes first, as an app can take a switch of the input method for the user leaving: the search of Settings closes on one. It reads the screen until the focused element has the text, and sends it again when it does not, as ADBKeyBoard drops text it is sent before it is up.
 
 ### Selectors
 

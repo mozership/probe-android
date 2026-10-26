@@ -77,6 +77,20 @@ func runActions(ctx context.Context, d device, req *Req, res *Res) (err error) {
 			err = fmt.Errorf("putting the input method back after ADBKeyBoard: %w", rerr)
 		}
 	}()
+	// A step that types text input text cannot switches to ADBKeyBoard
+	// before its first action, not as it types: an app can take the
+	// switch for the user leaving, as the search of Settings closes.
+	for i, a := range req.Actions {
+		if a.Name != "type" || adb.CanInputText(a.Value) {
+			continue
+		}
+		restore, err := d.UseADBKeyBoard(ctx)
+		if err != nil {
+			return fmt.Errorf("actions[%d] %s: input text types printable ASCII alone, so %q needs ADBKeyBoard: %w", i, a.Name, a.Value, err)
+		}
+		s.restoreIME = restore
+		break
+	}
 	for i, a := range req.Actions {
 		if err := s.run(ctx, a, res); err != nil {
 			if ctx.Err() != nil && !errors.Is(err, errNoElement) {
@@ -92,8 +106,8 @@ func runActions(ctx context.Context, d device, req *Req, res *Res) (err error) {
 type session struct {
 	d   device
 	app string
-	// restoreIME puts the input method back once the step is over, after
-	// a type switched it to ADBKeyBoard.
+	// restoreIME puts the input method back once the step is over, when
+	// the step switched it to ADBKeyBoard.
 	restoreIME func(context.Context) error
 }
 
@@ -167,13 +181,6 @@ func (s *session) run(ctx context.Context, a *Action, res *Res) error {
 func (s *session) typeText(ctx context.Context, text string) error {
 	if adb.CanInputText(text) {
 		return s.d.Type(ctx, text)
-	}
-	if s.restoreIME == nil {
-		restore, err := s.d.UseADBKeyBoard(ctx)
-		if err != nil {
-			return fmt.Errorf("input text types printable ASCII alone, so %q needs ADBKeyBoard: %w", text, err)
-		}
-		s.restoreIME = restore
 	}
 	return broadcastText(ctx, s.d, text)
 }

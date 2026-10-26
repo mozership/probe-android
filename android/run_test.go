@@ -315,7 +315,8 @@ func TestTypeWithADBKeyBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"tap 540 150", "use-adbkeyboard", "broadcast 日本", "broadcast 日本", "broadcast 日本",
+		"use-adbkeyboard",
+		"tap 540 150", "broadcast 日本", "broadcast 日本", "broadcast 日本",
 		"tap 540 150", "type  ok",
 		"tap 540 150", "broadcast 語",
 		"restore-ime",
@@ -342,10 +343,39 @@ func TestTypeASCIIDoesNotSwitch(t *testing.T) {
 
 func TestTypeWithoutADBKeyBoard(t *testing.T) {
 	f := &fakeDevice{edit: true, noKeyboard: true}
-	err := runActions(context.Background(), f, req(t, "", map[string]any{"name": "type", "selector": "name", "value": "100%sure"}), newRes())
+	err := runActions(context.Background(), f, req(t, "",
+		map[string]any{"name": "launch"},
+		map[string]any{"name": "type", "selector": "name", "value": "hello"},
+		map[string]any{"name": "type", "selector": "name", "value": "100%sure"},
+	), newRes())
 	if err == nil || !errors.Is(err, adb.ErrNoADBKeyBoard) ||
-		!strings.HasPrefix(err.Error(), `actions[0] type: input text types printable ASCII alone, so "100%sure" needs ADBKeyBoard: ADBKeyBoard is not installed`) {
+		!strings.HasPrefix(err.Error(), `actions[2] type: input text types printable ASCII alone, so "100%sure" needs ADBKeyBoard: ADBKeyBoard is not installed`) {
 		t.Errorf("runActions = %v", err)
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("calls = %q, want the step to fail before its first action", f.calls)
+	}
+}
+
+func TestSwitchToADBKeyBoardBeforeTheFirstAction(t *testing.T) {
+	f := &fakeDevice{edit: true}
+	err := runActions(context.Background(), f, req(t, "",
+		map[string]any{"name": "launch"},
+		map[string]any{"name": "type", "selector": "name", "value": "日本"},
+		map[string]any{"name": "type", "selector": "name", "value": "語"},
+	), newRes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"use-adbkeyboard",
+		"resolve com.android.settings", "start com.android.settings/.Main fresh=true",
+		"tap 540 150", "broadcast 日本",
+		"tap 540 150", "broadcast 語",
+		"restore-ime",
+	}
+	if got := typeCalls(f); !reflect.DeepEqual(got, want) {
+		t.Errorf("calls =\n%q\nwant\n%q", got, want)
 	}
 }
 
@@ -365,7 +395,7 @@ func TestTypePasswordWithADBKeyBoard(t *testing.T) {
 	if err := runActions(context.Background(), f, req(t, "", map[string]any{"name": "type", "selector": "name", "value": "パス"}), newRes()); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"tap 540 150", "use-adbkeyboard", "broadcast パス", "restore-ime"}
+	want := []string{"use-adbkeyboard", "tap 540 150", "broadcast パス", "restore-ime"}
 	if got := typeCalls(f); !reflect.DeepEqual(got, want) {
 		t.Errorf("calls = %q, want one broadcast, as a password field shows nothing to check", got)
 	}
