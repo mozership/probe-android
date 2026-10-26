@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mozership/probe-android/internal/adb"
@@ -21,6 +22,8 @@ type device interface {
 	LauncherActivity(ctx context.Context, pkg string) (string, error)
 	Start(ctx context.Context, activity string, fresh bool) error
 	ForceStop(ctx context.Context, pkg string) error
+	UseADBKeyBoard(ctx context.Context) (restore func(context.Context) error, err error)
+	BroadcastText(ctx context.Context, text string) error
 }
 
 var _ device = adb.Device{}
@@ -28,6 +31,14 @@ var _ device = adb.Device{}
 // pollInterval is the pause between dumps of a screen that does not have
 // the element yet. A dump itself takes most of a second.
 var pollInterval = 250 * time.Millisecond
+
+// imeSettle is how long a text ADBKeyBoard was sent is given to show in
+// the focused element before it is sent again.
+var imeSettle = 3 * time.Second
+
+// restoreTimeout bounds putting the input method back, after the step's
+// timeout may have run out.
+const restoreTimeout = 10 * time.Second
 
 // Res is what a step returns in res.
 type Res struct {
@@ -52,11 +63,36 @@ type Result struct {
 // runActions takes the actions of req in order on d, and stops at the
 // first that fails. Each action that waits for an element waits for what
 // is left of the step's timeout.
-func runActions(ctx context.Context, d device, req *Req, res *Res) error {
+func runActions(ctx context.Context, d device, req *Req, res *Res) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, req.Timeout)
 	defer cancel()
+	s := &session{d: d, app: req.App}
+	defer func() {
+		if s.restoreIME == nil {
+			return
+		}
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreTimeout)
+		defer cancel()
+		if rerr := s.restoreIME(rctx); rerr != nil && err == nil {
+			err = fmt.Errorf("putting the input method back after ADBKeyBoard: %w", rerr)
+		}
+	}()
+	// A step that types text input text cannot switches to ADBKeyBoard
+	// before its first action, not as it types, so that the input method
+	// does not change under the screen the step is on.
 	for i, a := range req.Actions {
-		if err := runAction(ctx, d, req.App, a, res); err != nil {
+		if a.Name != "type" || adb.CanInputText(a.Value) {
+			continue
+		}
+		restore, err := d.UseADBKeyBoard(ctx)
+		if err != nil {
+			return fmt.Errorf("actions[%d] %s: input text types printable ASCII alone, so %q needs ADBKeyBoard: %w", i, a.Name, a.Value, err)
+		}
+		s.restoreIME = restore
+		break
+	}
+	for i, a := range req.Actions {
+		if err := s.run(ctx, a, res); err != nil {
 			if ctx.Err() != nil && !errors.Is(err, errNoElement) {
 				err = fmt.Errorf("the step's timeout ran out: %w", err)
 			}
@@ -66,7 +102,17 @@ func runActions(ctx context.Context, d device, req *Req, res *Res) error {
 	return nil
 }
 
-func runAction(ctx context.Context, d device, app string, a *Action, res *Res) error {
+// session is what the actions of a step share.
+type session struct {
+	d   device
+	app string
+	// restoreIME puts the input method back once the step is over, when
+	// the step switched it to ADBKeyBoard.
+	restoreIME func(context.Context) error
+}
+
+func (s *session) run(ctx context.Context, a *Action, res *Res) error {
+	d, app := s.d, s.app
 	switch a.Name {
 	case "launch", "activate":
 		activity, err := d.LauncherActivity(ctx, app)
@@ -91,7 +137,7 @@ func runAction(ctx context.Context, d device, app string, a *Action, res *Res) e
 			return err
 		}
 		if a.Name == "type" {
-			return d.Type(ctx, a.Value)
+			return s.typeText(ctx, a.Value)
 		}
 		return nil
 	case "wait":
@@ -128,6 +174,66 @@ func runAction(ctx context.Context, d device, app string, a *Action, res *Res) e
 		return nil
 	}
 	return fmt.Errorf("no action is named %q", a.Name)
+}
+
+// typeText types text into what has the focus: with input text, or with
+// ADBKeyBoard when input text cannot type it.
+func (s *session) typeText(ctx context.Context, text string) error {
+	if adb.CanInputText(text) {
+		return s.d.Type(ctx, text)
+	}
+	return broadcastText(ctx, s.d, text)
+}
+
+// broadcastText has ADBKeyBoard type text, and reads the screen until the
+// focused element has it. ADBKeyBoard drops what it is sent before it is
+// up and bound to the element, so the text is sent again when it does not
+// show; it is typed whole or not at all, so it is never typed twice.
+func broadcastText(ctx context.Context, d device, text string) error {
+	root, err := dump(ctx, d)
+	if err != nil {
+		return err
+	}
+	before := ""
+	if f := uitree.Focused(root); f != nil {
+		if f.Password {
+			// A password field shows no text to check.
+			return d.BroadcastText(ctx, text)
+		}
+		before = f.Text
+	}
+	// focus is what had the focus at the last read, for the message when
+	// the text does not show.
+	focus := "no element"
+	for {
+		if err := d.BroadcastText(ctx, text); err != nil {
+			return err
+		}
+		deadline := time.Now().Add(imeSettle)
+		for time.Now().Before(deadline) {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("ADBKeyBoard did not type %q: %s had the focus", text, focus)
+			case <-time.After(pollInterval):
+			}
+			root, err := dumpOnce(ctx, d)
+			if err != nil {
+				if isNotReady(err) || ctx.Err() != nil {
+					continue
+				}
+				return err
+			}
+			f := uitree.Focused(root)
+			if f == nil {
+				focus = "no element"
+				continue
+			}
+			focus = f.String()
+			if f.Text != before && strings.Contains(f.Text, text) {
+				return nil
+			}
+		}
+	}
 }
 
 var errNoElement = errors.New("no element matches")

@@ -136,7 +136,6 @@ func TestParseReqErrors(t *testing.T) {
 		{name: "tap without selector", with: action(map[string]any{"name": "tap"}), want: "tap needs a selector"},
 		{name: "back with selector", with: action(map[string]any{"name": "back", "selector": "x"}), want: "back takes no selector"},
 		{name: "type without value", with: action(map[string]any{"name": "type", "selector": "x"}), want: "type needs a value"},
-		{name: "type of what input cannot type", with: action(map[string]any{"name": "type", "selector": "x", "value": "日本"}), want: "type: input text types printable ASCII alone"},
 		{name: "tap with value", with: action(map[string]any{"name": "tap", "selector": "x", "value": "y"}), want: "tap takes no value"},
 		{name: "tap with id", with: action(map[string]any{"name": "tap", "selector": "x", "id": "t"}), want: "returns nothing for id"},
 		{name: "bad selector", with: action(map[string]any{"name": "tap", "selector": "label=x"}), want: "tap: selector"},

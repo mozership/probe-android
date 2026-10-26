@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mozership/probe-android/internal/adb"
 	"github.com/mozership/probe-android/internal/uitree"
 	"github.com/mozership/probe/actionrpc"
 )
@@ -147,14 +146,10 @@ func (a *Action) check() error {
 	} else if a.Selector != "" {
 		return fmt.Errorf("%s takes no selector", a.Name)
 	}
-	if k.value {
-		if a.Value == "" {
-			return fmt.Errorf("%s needs a value, the text to type", a.Name)
-		}
-		if _, err := adb.InputText(a.Value); err != nil {
-			return fmt.Errorf("%s: %w", a.Name, err)
-		}
-	} else if a.Value != "" {
+	if k.value && a.Value == "" {
+		return fmt.Errorf("%s needs a value, the text to type", a.Name)
+	}
+	if !k.value && a.Value != "" {
 		return fmt.Errorf("%s takes no value", a.Name)
 	}
 	if k.result == "" && a.ID != "" {

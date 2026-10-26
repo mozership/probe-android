@@ -38,6 +38,12 @@ jobs:
         with:
           install-only: true
           version: v1.30.0
+      # ADBKeyBoard types the text input text cannot. Its digest is the one
+      # GitHub lists for the asset.
+      - name: Download ADBKeyBoard
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/adbkeyboard.apk" https://github.com/senzhk/ADBKeyBoard/releases/download/v2.5-dev/keyboardservice-debug.apk
+          echo "41a8a0996d7397a2390d1ca16a75cb66c4a7bdaa89cf4e63600a4d3fb346fbbb  $RUNNER_TEMP/adbkeyboard.apk" | sha256sum -c -
       # The emulator runs at speed only with KVM, which the runner has but
       # does not open to the job's user.
       - name: Enable KVM
@@ -51,4 +57,15 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          script: probe e2e/workflow.yml
+          # When the e2e fails, the screen it was left on is kept: what
+          # uiautomator reads of it, and a screenshot.
+          script: |
+            adb install -r "$RUNNER_TEMP/adbkeyboard.apk"
+            probe e2e/workflow.yml || { mkdir -p "$RUNNER_TEMP/screen"; adb exec-out uiautomator dump /dev/tty > "$RUNNER_TEMP/screen/screen.xml"; adb exec-out screencap -p > "$RUNNER_TEMP/screen/screen.png"; exit 1; }
+      - name: Keep the screen of a failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screen
+          path: ${{ runner.temp }}/screen
+          if-no-files-found: ignore

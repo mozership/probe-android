@@ -7,7 +7,7 @@ import (
 )
 
 // settings is a screen as uiautomator dump writes it, cut down.
-const settings = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,2400]"><node index="0" text="Settings" resource-id="com.android.settings:id/homepage_title" class="android.widget.TextView" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[63,252][1017,399]" /><node index="1" text="" resource-id="" class="android.widget.LinearLayout" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,500][1080,700]"><node index="0" text="Network &amp; internet" resource-id="android:id/title" class="android.widget.TextView" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[200,540][700,600]" /></node><node index="2" text="" resource-id="" class="android.widget.LinearLayout" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="true" enabled="false" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,700][1080,900]"><node index="0" text="Connected devices" resource-id="android:id/title" class="android.widget.TextView" package="com.android.settings" content-desc="" checkable="false" checked="true" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[200,740][700,800]" /></node><node index="3" text="" resource-id="" class="android.widget.ImageButton" package="com.android.settings" content-desc="Search settings" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="true" bounds="[900,100][1050,250]" /></node></hierarchy>`
+const settings = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,2400]"><node index="0" text="Settings" resource-id="com.android.settings:id/homepage_title" class="android.widget.TextView" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[63,252][1017,399]" /><node index="1" text="" resource-id="" class="android.widget.LinearLayout" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,500][1080,700]"><node index="0" text="Network &amp; internet" resource-id="android:id/title" class="android.widget.TextView" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[200,540][700,600]" /></node><node index="2" text="" resource-id="" class="android.widget.LinearLayout" package="com.android.settings" content-desc="" checkable="false" checked="false" clickable="true" enabled="false" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,700][1080,900]"><node index="0" text="Connected devices" resource-id="android:id/title" class="android.widget.TextView" package="com.android.settings" content-desc="" checkable="false" checked="true" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[200,740][700,800]" /></node><node index="3" text="" resource-id="" class="android.widget.ImageButton" package="com.android.settings" content-desc="Search settings" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="true" scrollable="false" long-clickable="false" password="false" selected="true" bounds="[900,100][1050,250]" /></node></hierarchy>`
 
 func parse(t *testing.T) *Node {
 	t.Helper()
@@ -35,7 +35,7 @@ func TestParse(t *testing.T) {
 		t.Errorf("the flags were not read")
 	}
 	search := frame.Children[3]
-	if search.Desc != "Search settings" || !search.Selected {
+	if search.Desc != "Search settings" || !search.Selected || !search.Focused || frame.Focused {
 		t.Errorf("the search button is %+v", search)
 	}
 }
@@ -130,9 +130,19 @@ func TestFormat(t *testing.T) {
     TextView id=android:id/title text="Network & internet" [200,540][700,600]
   LinearLayout [0,700][1080,900] disabled
     TextView id=android:id/title text="Connected devices" [200,740][700,800] checked
-  ImageButton desc="Search settings" [900,100][1050,250] selected
+  ImageButton desc="Search settings" [900,100][1050,250] selected focused
 `
 	if got := Format(parse(t)); got != want {
 		t.Errorf("Format =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestFocused(t *testing.T) {
+	root := parse(t)
+	if n := Focused(root); n == nil || n.Desc != "Search settings" {
+		t.Errorf("Focused = %+v, want the search button", n)
+	}
+	if n := Focused(&Node{Children: []*Node{{Class: "a"}}}); n != nil {
+		t.Errorf("Focused of a screen with no focus = %+v", n)
 	}
 }
