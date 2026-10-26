@@ -1,0 +1,67 @@
+# The end-to-end tests: the action built from this checkout drives the
+# Settings app of an emulator through Probe. Settings is on every emulator,
+# so there is no app to build. Run it from the repository root, with an
+# emulator booted in English and probe on PATH:
+#
+#   go build -o e2e/action/probe-android . && probe e2e/workflow.yml
+#
+# DEVICE names the emulator when adb lists more than one device.
+name: probe-android e2e
+
+actions:
+  android: ./action
+
+vars:
+  device: "{{ DEVICE ?? '' }}"
+  settings: com.android.settings
+
+jobs:
+# Both jobs drive Settings on the same emulator, so they run in turn.
+- name: Failures
+  id: failures
+  steps:
+  - name: An element that is not there fails the step
+    uses: shell
+    with:
+      cmd: |
+        probe e2e/missing.yml
+        echo "exit=$?"
+      timeout: 5m
+    test: |
+      res.stdout contains "exit=3" &&
+      res.stdout contains 'actions[0] tap: no element matches text="No Such Row" within'
+
+- name: Settings
+  needs: [failures]
+  steps:
+  - name: Open Network & internet
+    uses: android
+    with:
+      app: "{{vars.settings}}"
+      device: "{{vars.device}}"
+      timeout: 1m
+      actions:
+      - name: launch
+      - name: tap
+        selector: text="Network & internet"
+      - name: wait
+        selector: text="Airplane mode"
+      - name: text
+        id: airplane
+        selector: text="Airplane mode"
+      - name: tree
+    test: res.code == 0 && res.results.airplane == "Airplane mode" && res.results.tree contains "Airplane mode"
+
+  # A later step goes on from the screen the step before left.
+  - name: Go back
+    uses: android
+    with:
+      app: "{{vars.settings}}"
+      device: "{{vars.device}}"
+      actions:
+      - name: back
+      - name: wait
+        selector: text="Network & internet"
+      - name: screenshot
+        id: home
+    test: res.code == 0 && res.filepaths.home endsWith ".png"

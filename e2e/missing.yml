@@ -1,0 +1,31 @@
+name: probe-android missing element
+description: |
+  Taps an element the Settings app does not have, so that e2e/workflow.yml
+  can check the step fails with the reason rather than passes.
+  This workflow is expected to fail with an action error.
+actions:
+  android: ./action
+vars:
+  device: "{{ DEVICE ?? '' }}"
+jobs:
+- name: Missing element
+  steps:
+  - name: Launches Settings
+    uses: android
+    with:
+      app: com.android.settings
+      device: "{{vars.device}}"
+      actions:
+      - name: launch
+    test: res.code == 0
+
+  - name: Taps an element that is not there
+    uses: android
+    with:
+      app: com.android.settings
+      device: "{{vars.device}}"
+      timeout: 5s
+      actions:
+      - name: tap
+        selector: text="No Such Row"
+    test: res.code == 0

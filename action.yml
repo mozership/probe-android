@@ -1,0 +1,9 @@
+# It declares no guard: the action cannot tell what an app will do, so a
+# step that uses it is refused under --read-only or --allow-host unless
+# --allow-action names it.
+name: android
+description: Drive an app on an Android emulator or device through adb
+params: [app, device, actions, timeout]
+runs:
+  using: binary
+  url: https://github.com/mozership/probe-android/releases/download/v0.0.0/probe-android_{os}_{arch}
