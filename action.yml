@@ -6,9 +6,9 @@ description: Drive an app on an Android emulator or device through adb
 params: [app, device, actions, timeout]
 runs:
   using: binary
-  url: https://github.com/mozership/probe-android/releases/download/v0.2.0/probe-android_{os}_{arch}
+  url: https://github.com/mozership/probe-android/releases/download/v0.2.1/probe-android_{os}_{arch}
   checksums:
-    darwin_amd64: "298119c9e6e1669c6b3934b7ed9f61272646cef0c1c9268b98fafbd26242ceee"
-    darwin_arm64: "98a2c61b3a4f08bd00dbafbc99f3cfdd8bdcad49975494e0e946725cd960dc14"
-    linux_amd64: "732e6f8f2a9698fe183f7653f298b60bb5538dcf542286564168585087e891c1"
-    linux_arm64: "2c745d6261eeb831d09ee29eac00b7622297e252885e4fc019f00f1d1529c6fd"
+    darwin_amd64: "175eba504f4ac0ba12a60373a536aa3b970771393ce9616971ddf78ad31afb31"
+    darwin_arm64: "cfab5211dd2a20753dca23d532b498a7fc1ff2a1e76be9e3253640b52cd1e18e"
+    linux_amd64: "4f828d3966de7ad5e1499cdca5714189d532cc829e699b206852edc9f3d6520b"
+    linux_arm64: "cc08f10ae79829a24e3ba0c6ad2c57bb2c5e64ef95bef26a819a440d5e74102a"
