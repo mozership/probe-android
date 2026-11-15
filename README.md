@@ -1,6 +1,8 @@
 # probe-android
 
-A [Probe](https://github.com/mozership/probe) action that drives an app on an Android emulator or device: it launches the app, taps and types into it, waits for elements, reads their text and takes screenshots. It works through adb alone: it reads the screen with `uiautomator dump` and acts on it with `input`, so there is nothing to build or install on the device.
+A [Probe](https://github.com/mozership/probe) action that drives an app on an Android emulator or device: it launches the app, taps and types into it, waits for elements, reads their text and takes screenshots. It works through adb alone: it reads the screen with `uiautomator dump` and acts on it with `input`, so there is nothing to build or install on the device. Each action on an element reads the screen again until the element is on it, and acts on it with `input tap` at the middle of the element, or `input text` to type. It runs on Linux and macOS.
+
+It is an [external action](https://probe.linyo.ws/guide/concepts/actions#external-actions): Probe downloads it the first time a workflow uses it, and runs the executable whose SHA-256 the `action.yml` at the pinned commit names.
 
 A workflow gives the action a name once, under `actions` at its top, and its steps use the name:
 
@@ -20,7 +22,7 @@ Probe only takes a full 40-character commit SHA there. The notes of each [releas
 | The app under test | Installed on it: `adb install path/to/app.apk` |
 | [ADBKeyBoard](https://github.com/senzhk/ADBKeyBoard), to type other than ASCII | Installed on it: `adb install keyboardservice-debug.apk`, from its [releases](https://github.com/senzhk/ADBKeyBoard/releases). See [Typing](#typing) |
 
-The action does not boot the emulator or install the app. Do that in a step of its own, such as a `shell` step, so that a failed boot is not taken for a failed test.
+The action does not boot the emulator or install the app. Do that in a step of its own, such as a [`shell`](https://probe.linyo.ws/reference/actions/shell) step, so that a failed boot is not taken for a failed test.
 
 Reading the screen with uiautomator hides the soft keyboard, as each action on an element does. An element keeps the focus, and `type` types into it all the same, but an app that acts on the keyboard going, as the search of Settings closes, cannot be driven past it.
 
@@ -29,20 +31,27 @@ Turn the animations of the emulator off, as `adb shell settings put global anima
 ## Basic Syntax
 
 ```yaml
-steps:
-  - name: Open Network & internet
-    uses: android
-    with:
-      app: com.android.settings
-      actions:
-        - name: launch
-        - name: tap
-          selector: text="Network & internet"
-        - name: text
-          id: airplane
-          selector: text="Airplane mode"
-    test: res.code == 0 && res.results.airplane == "Airplane mode"
+name: Settings
+actions:
+  android: github.com/mozership/probe-android@<commit SHA>
+jobs:
+  - name: settings
+    steps:
+      - name: Open Network & internet
+        uses: android
+        with:
+          app: com.android.settings
+          actions:
+            - name: launch
+            - name: tap
+              selector: text="Network & internet"
+            - name: text
+              id: airplane
+              selector: text="Airplane mode"
+        test: res.code == 0 && res.results.airplane == "Airplane mode"
 ```
+
+A later step goes on from the screen the step before left, as the device keeps it.
 
 ## Parameters
 
@@ -74,10 +83,13 @@ Each entry of `actions` names its action in `name`:
 
 `id` is the key of the result. Without it the action's name is the key.
 
-An action on an element reads the screen until the element is on it, for what is left of `timeout`, and the step fails when it does not come:
+An action on an element reads the screen until the element is on it, for what is left of `timeout`, and the step fails when it does not come. An entry with a key an action does not take, such as `args` of the iOS action, is refused before the step runs.
+
+`tree` lists the screen with one element a line, indented by depth:
 
 ```
-actions[1] tap: no element matches text="No Such Row" within 5.0s
+TextView id=android:id/title text="Network & internet" [200,540][700,600]
+EditText id=com.android.settings:id/ssid text="Wi-Fi" [20,230][256,278] focused
 ```
 
 ### Typing
@@ -90,7 +102,7 @@ actions[1] tap: no element matches text="No Such Row" within 5.0s
   value: 日本語
 ```
 
-ADBKeyBoard has to be installed on the device; the action does not install it, and says so when it is not there. It is not set up beyond that: a step that types such text makes it the input method before its first action, enabling it when it is not, and puts the input method back as it was once the step is over, even when the step fails. The switch comes first, as the input method changing under an app can move it on, as the keyboard going can. It reads the screen until the focused element has the text, and sends it again when it does not, as ADBKeyBoard drops text it is sent before it is up.
+ADBKeyBoard has to be installed on the device; the action does not install it, and fails a step that needs it before the step's first action when it is not there. It is not set up beyond that: a step that types such text makes it the input method before its first action, enabling it when it is not, and puts the input method back as it was once the step is over, even when the step fails. The switch comes first, as the input method changing under an app can move it on, as the keyboard going can. It reads the screen until the focused element has the text, and sends it again when it does not, as ADBKeyBoard drops text it is sent before it is up.
 
 ### Selectors
 
@@ -114,11 +126,44 @@ selector: id=title index=2
 
 | Field | Description |
 |-------|-------------|
-| `res.code` | `0` when every action succeeded, `1` otherwise |
+| `res.code` | `0` when every action succeeded |
 | `res.results` | What `text` and `tree` read, by key |
 | `res.filepaths` | The files `screenshot` saved, by key |
 | `res.device` | The serial of the device the actions ran on |
 
+An action that cannot finish fails the step with an action error, which exits the run with status `3`, and there is no `res` to test:
+
+```
+actions[1] tap: no element matches text="No Such Row" within 5.0s
+```
+
 ## CI
 
-On GitHub Actions, an Ubuntu runner runs an emulator with KVM. [.github/workflows/test.yml](.github/workflows/test.yml) does this for the e2e tests of this repository, with [android-emulator-runner](https://github.com/ReactiveCircus/android-emulator-runner), which also turns the animations off.
+On GitHub Actions, an Ubuntu runner runs an emulator with KVM. [android-emulator-runner](https://github.com/ReactiveCircus/android-emulator-runner) boots one, turns its animations off, and runs a script while it is up:
+
+```yaml
+name: E2E
+on: [pull_request]
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Probe
+        uses: mozership/probe-action@v1.3.0
+        with:
+          install-only: true
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          script: probe e2e.yml
+```
+
+[.github/workflows/test.yml](https://github.com/mozership/probe-android/blob/main/.github/workflows/test.yml) does this for the e2e tests of this repository.
