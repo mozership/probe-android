@@ -69,6 +69,7 @@ jobs:
 
 # ADBKeyBoard has to be installed on the emulator, as the CI does.
 - name: Typing
+  id: typing
   needs: [settings]
   steps:
   # Each action reads the screen with uiautomator, which hides the soft
@@ -107,3 +108,31 @@ jobs:
         adb=$(command -v adb || echo "$ANDROID_HOME/platform-tools/adb")
         "$adb" shell settings get secure default_input_method
     test: res.code == 0 && !(res.stdout contains "adbkeyboard")
+
+# The page about the device shows how long it has been up, which changes
+# each second, so the screen never goes idle and uiautomator dump cannot
+# read it. The action reads it all the same.
+- name: A screen that keeps changing
+  needs: [typing]
+  steps:
+  - name: Open the page about the device
+    uses: shell
+    with:
+      cmd: |
+        adb=$(command -v adb || echo "$ANDROID_HOME/platform-tools/adb")
+        "$adb" ${DEVICE:+-s "$DEVICE"} shell am start -W -a android.settings.DEVICE_INFO_SETTINGS
+        sleep 3
+        "$adb" ${DEVICE:+-s "$DEVICE"} exec-out uiautomator dump /dev/tty
+    test: res.code == 0 && res.stdout contains "could not get idle state"
+
+  - name: Read the version of Android
+    uses: android
+    with:
+      app: "{{vars.settings}}"
+      device: "{{vars.device}}"
+      timeout: 1m
+      actions:
+      - name: wait
+        selector: text="Android version"
+      - name: tree
+    test: res.code == 0 && res.results.tree contains "Android version"

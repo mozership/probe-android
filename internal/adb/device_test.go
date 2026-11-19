@@ -1,8 +1,10 @@
 package adb
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -44,22 +46,89 @@ func device(f *fakeAdb) Device {
 
 func TestDump(t *testing.T) {
 	xml := `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"></hierarchy>`
-	f := &fakeAdb{replies: map[string]string{"exec-out uiautomator dump": "UI hierchary dumped to: /data/local/tmp/x.xml\n" + xml}}
+	f := &fakeAdb{replies: map[string]string{"exec-out if [ -f": xml}}
 	got, err := device(f).Dump(context.Background())
 	if err != nil || string(got) != xml {
 		t.Errorf("Dump = %q, %v", got, err)
+	}
+	if len(f.calls) != 1 {
+		t.Fatalf("adb ran %d times, want once: %v", len(f.calls), f.calls)
 	}
 	call := f.calls[0]
 	if call[0] != "-s" || call[1] != "emulator-5554" || call[2] != "exec-out" {
 		t.Errorf("adb %v", call)
 	}
-	if !strings.Contains(call[3], "&& cat ") || !strings.Contains(call[3], "rm -f ") {
-		t.Errorf("the dump does not read the file and remove it: %q", call[3])
+	for _, want := range []string{"CLASSPATH=/system/framework/uiautomator.jar:" + dumperPath, "app_process /system/bin ProbeAndroidDump ", "&& cat ", "rm -f "} {
+		if !strings.Contains(call[3], want) {
+			t.Errorf("the dump does not hold %q: %q", want, call[3])
+		}
+	}
+}
+
+func TestDumpPushesTheJar(t *testing.T) {
+	xml := `<hierarchy rotation="0"></hierarchy>`
+	var calls [][]string
+	pushed := false
+	run := func(ctx context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, args)
+		switch args[2] {
+		case "push":
+			b, err := os.ReadFile(args[3])
+			if err != nil || !bytes.Equal(b, dumperJar) || args[4] != dumperPath {
+				t.Errorf("push %v: %v", args[3:], err)
+			}
+			pushed = true
+			return nil, nil
+		case "exec-out":
+			if pushed {
+				return []byte(xml), nil
+			}
+			return []byte(noDumper + "\n"), nil
+		}
+		return nil, nil
+	}
+	got, err := Device{Serial: "emulator-5554", Run: run}.Dump(context.Background())
+	if err != nil || string(got) != xml {
+		t.Errorf("Dump = %q, %v", got, err)
+	}
+	if len(calls) != 3 || !pushed {
+		t.Errorf("adb %v, want the dump, the push and the dump again", calls)
+	}
+	if !strings.HasPrefix(dumperPath, "/data/local/tmp/probe-android-dumper-") || !strings.HasSuffix(dumperPath, ".jar") {
+		t.Errorf("the jar goes to %s", dumperPath)
+	}
+
+	run = func(ctx context.Context, args ...string) ([]byte, error) {
+		if args[2] == "push" {
+			return nil, errors.New("adb: no space left on device")
+		}
+		return []byte(noDumper), nil
+	}
+	if _, err := (Device{Serial: "emulator-5554", Run: run}).Dump(context.Background()); err == nil || !strings.Contains(err.Error(), "no space left") {
+		t.Errorf("Dump = %v, want the error of the push", err)
+	}
+}
+
+func TestDumpFallsBackToUiautomator(t *testing.T) {
+	xml := `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"></hierarchy>`
+	f := &fakeAdb{replies: map[string]string{
+		"exec-out if [ -f":          "Exception in thread \"main\" java.lang.ClassNotFoundException\n",
+		"exec-out uiautomator dump": "UI hierchary dumped to: /data/local/tmp/x.xml\n" + xml,
+	}}
+	got, err := device(f).Dump(context.Background())
+	if err != nil || string(got) != xml {
+		t.Errorf("Dump = %q, %v", got, err)
+	}
+	if len(f.calls) != 2 || !strings.HasPrefix(f.calls[1][3], "uiautomator dump ") {
+		t.Errorf("adb %v, want the jar, then uiautomator dump", f.calls)
 	}
 }
 
 func TestDumpNotReady(t *testing.T) {
-	f := &fakeAdb{replies: map[string]string{"exec-out uiautomator dump": "ERROR: could not get idle state.\n"}}
+	f := &fakeAdb{replies: map[string]string{
+		"exec-out if [ -f":          "ERROR: no window to read.\n",
+		"exec-out uiautomator dump": "ERROR: could not get idle state.\n",
+	}}
 	_, err := device(f).Dump(context.Background())
 	var nr *NotReadyError
 	if !errors.As(err, &nr) || nr.Output != "ERROR: could not get idle state." {
