@@ -125,7 +125,7 @@ jobs:
         "$adb" ${DEVICE:+-s "$DEVICE"} exec-out uiautomator dump /dev/tty
     test: res.code == 0 && res.stdout contains "could not get idle state"
 
-  - name: Read the version of Android
+  - name: Read the page
     uses: android
     with:
       app: "{{vars.settings}}"
@@ -133,6 +133,6 @@ jobs:
       timeout: 1m
       actions:
       - name: wait
-        selector: text="Android version"
+        selector: text="Device name"
       - name: tree
-    test: res.code == 0 && res.results.tree contains "Android version"
+    test: res.code == 0 && res.results.tree contains "About emulated device"
