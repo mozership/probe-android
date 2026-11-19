@@ -17,6 +17,17 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
 
+  # internal/adb/dumper.jar, which the action pushes to the device to read
+  # the screen, is committed, so that the action builds with Go alone. This
+  # builds it again from dumper/ProbeAndroidDump.java and fails when the
+  # two differ.
+  dumper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - run: dumper/build.sh
+      - run: git diff --exit-code internal/adb/dumper.jar
+
   # The tests above use a fake in place of adb. This one drives the Settings
   # app of an emulator through Probe, as a workflow would.
   e2e:

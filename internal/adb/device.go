@@ -3,6 +3,8 @@ package adb
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	_ "embed"
 	"fmt"
 	"os"
 	"strconv"
@@ -32,23 +34,80 @@ func (e *NotReadyError) Error() string {
 	return "uiautomator could not dump the screen: " + e.Output
 }
 
-// Dump returns the screen as uiautomator dump writes it.
+// dumperJar is the dex of dumper/ProbeAndroidDump.java, which
+// dumper/build.sh builds. It reads the screen as uiautomator dump does, but
+// reads one that does not go idle, as one with a clock, rather than fail.
+//
+//go:embed dumper.jar
+var dumperJar []byte
+
+// dumperPath is where the jar goes on the device. It is named by its
+// digest, so that a device keeps the jar of each version of the action
+// apart, and is given the jar again only when it does not have it.
+var dumperPath = fmt.Sprintf("/data/local/tmp/probe-android-dumper-%x.jar", sha256.Sum256(dumperJar))
+
+// noDumper is what the device says when it does not have the jar.
+const noDumper = "probe-android: no dumper"
+
+// Dump returns the screen as uiautomator dump writes it. It reads it with
+// the jar of the action, which it pushes to the device first when the device
+// does not have it, and with uiautomator dump when the jar cannot.
 func (d Device) Dump(ctx context.Context) ([]byte, error) {
 	// The file is named by the process, so that steps that dump at once
 	// do not read each other's.
 	path := fmt.Sprintf("/data/local/tmp/probe-android-%d.xml", os.Getpid())
-	out, err := d.run(ctx, "exec-out", fmt.Sprintf("uiautomator dump %s && cat %s; rm -f %s", path, path, path))
+	jar := fmt.Sprintf("if [ -f %[1]s ]; then CLASSPATH=/system/framework/uiautomator.jar:%[1]s app_process /system/bin ProbeAndroidDump %[2]s && cat %[2]s; else echo %[3]q; fi; rm -f %[2]s", dumperPath, path, noDumper)
+	out, err := d.run(ctx, "exec-out", jar)
+	if err == nil && bytes.Contains(out, []byte(noDumper)) {
+		if err := d.push(ctx, dumperJar, dumperPath); err != nil {
+			return nil, err
+		}
+		out, err = d.run(ctx, "exec-out", jar)
+	}
 	if err != nil {
 		return nil, err
 	}
+	if xml := xmlOf(out); xml != nil {
+		return xml, nil
+	}
+	out, err = d.run(ctx, "exec-out", fmt.Sprintf("uiautomator dump %s && cat %s; rm -f %s", path, path, path))
+	if err != nil {
+		return nil, err
+	}
+	if xml := xmlOf(out); xml != nil {
+		return xml, nil
+	}
+	return nil, &NotReadyError{Output: strings.TrimSpace(string(out))}
+}
+
+// xmlOf returns the XML in what a dump wrote, or nil when there is none.
+func xmlOf(out []byte) []byte {
 	i := bytes.Index(out, []byte("<?xml"))
 	if i < 0 {
 		i = bytes.Index(out, []byte("<hierarchy"))
 	}
 	if i < 0 {
-		return nil, &NotReadyError{Output: strings.TrimSpace(string(out))}
+		return nil
 	}
-	return out[i:], nil
+	return out[i:]
+}
+
+// push writes b to path on the device.
+func (d Device) push(ctx context.Context, b []byte, path string) error {
+	local, err := os.CreateTemp("", "probe-android-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(local.Name())
+	if _, err := local.Write(b); err != nil {
+		_ = local.Close()
+		return err
+	}
+	if err := local.Close(); err != nil {
+		return err
+	}
+	_, err = d.run(ctx, "push", local.Name(), path)
+	return err
 }
 
 // Tap taps the screen at x, y.

@@ -1,6 +1,6 @@
 # probe-android
 
-A [Probe](https://github.com/mozership/probe) action that drives an app on an Android emulator or device: it launches the app, taps and types into it, waits for elements, reads their text and takes screenshots. It works through adb alone: it reads the screen with `uiautomator dump` and acts on it with `input`, so there is nothing to build or install on the device. Each action on an element reads the screen again until the element is on it, and acts on it with `input tap` at the middle of the element, or `input text` to type. It runs on Linux and macOS.
+A [Probe](https://github.com/mozership/probe) action that drives an app on an Android emulator or device: it launches the app, taps and types into it, waits for elements, reads their text and takes screenshots. It works through adb alone: it reads the screen as `uiautomator dump` does and acts on it with `input`, so there is nothing to build or install on the device but a small jar of its own, which it pushes to `/data/local/tmp` the first time. Each action on an element reads the screen again until the element is on it, and acts on it with `input tap` at the middle of the element, or `input text` to type. It runs on Linux and macOS.
 
 It is an [external action](https://probe.linyo.ws/guide/concepts/actions#external-actions): Probe downloads it the first time a workflow uses it, and runs the executable whose SHA-256 the `action.yml` at the pinned commit names.
 
@@ -26,7 +26,7 @@ The action does not boot the emulator or install the app. Do that in a step of i
 
 Reading the screen with uiautomator hides the soft keyboard, as each action on an element does. An element keeps the focus, and `type` types into it all the same, but an app that acts on the keyboard going, as the search of Settings closes, cannot be driven past it.
 
-Turn the animations of the emulator off, as `adb shell settings put global animator_duration_scale 0` and its `window_` and `transition_` siblings do: uiautomator cannot read a screen that is still moving, so the action waits for it.
+Turn the animations of the emulator off, as `adb shell settings put global animator_duration_scale 0` and its `window_` and `transition_` siblings do. The action waits up to 3 seconds for the screen to keep still before it reads it, as after a tap, and then reads it as it is: `uiautomator dump` fails on a screen that never keeps still, such as one with a clock, but the action does not. The jar it reads the screen with, [`dumper/ProbeAndroidDump.java`](dumper/ProbeAndroidDump.java), calls the `uiautomator` of the device as `uiautomator dump` does, and when it cannot, the action uses `uiautomator dump`.
 
 ## Basic Syntax
 
