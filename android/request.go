@@ -197,7 +197,7 @@ func ParseSelector(s string) (Selector, error) {
 		if strings.ContainsAny(s, " \"") {
 			return Selector{}, fmt.Errorf("selector %q is not key=value pairs nor a resource id", s)
 		}
-		return Selector{Match: uitree.Match{ID: s}}, nil
+		return Selector{ID: s}, nil
 	}
 	pairs, err := splitPairs(s)
 	if err != nil {
