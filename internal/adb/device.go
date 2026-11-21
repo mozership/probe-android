@@ -98,7 +98,7 @@ func (d Device) push(ctx context.Context, b []byte, path string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(local.Name())
+	defer func() { _ = os.Remove(local.Name()) }()
 	if _, err := local.Write(b); err != nil {
 		_ = local.Close()
 		return err
