@@ -12,7 +12,7 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/mozership/probe-android/internal/adb"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 // Server is the android action, as Probe calls it.
@@ -22,7 +22,7 @@ type Server struct {
 	ctx context.Context
 }
 
-var _ actionrpc.StepAction = (*Server)(nil)
+var _ sdk.StepAction = (*Server)(nil)
 
 // Serve serves the action to Probe.
 func Serve() {
@@ -35,20 +35,20 @@ func Serve() {
 		time.Sleep(time.Second)
 		os.Exit(1)
 	}()
-	actionrpc.Serve(func(log hclog.Logger) actionrpc.Action {
+	sdk.Serve(func(log hclog.Logger) sdk.Action {
 		return &Server{log: log, ctx: ctx}
 	})
 }
 
 // Run runs a step; Probe calls RunStep.
 func (a *Server) Run(with map[string]any) (map[string]any, error) {
-	ret, _, err := a.RunStep(actionrpc.Call{With: with})
+	ret, _, err := a.RunStep(sdk.Call{With: with})
 	return ret, err
 }
 
 // RunStep takes the actions of a step on the device.
-func (a *Server) RunStep(call actionrpc.Call) (map[string]any, map[string]any, error) {
-	actionrpc.LogParams(a.log, "received android action request", call.With)
+func (a *Server) RunStep(call sdk.Call) (map[string]any, map[string]any, error) {
+	sdk.LogParams(a.log, "received android action request", call.With)
 	start := time.Now()
 	req, err := parseReq(call.With)
 	if err != nil {
@@ -58,8 +58,8 @@ func (a *Server) RunStep(call actionrpc.Call) (map[string]any, map[string]any, e
 	if err := a.run(req, &res); err != nil {
 		return failed(start, req, res, err)
 	}
-	ret, err := actionrpc.EncodeResult(Result{Req: *req, Res: res, RT: time.Since(start)})
-	actionrpc.LogOutcome(a.log, "android request", ret, err)
+	ret, err := sdk.EncodeResult(Result{Req: *req, Res: res, RT: time.Since(start)})
+	sdk.LogOutcome(a.log, "android request", ret, err)
 	return ret, nil, err
 }
 
@@ -97,7 +97,7 @@ func failed(start time.Time, req *Req, res Res, err error) (map[string]any, map[
 		res.FilePaths = map[string]string{}
 	}
 	res.Code = 1
-	ret, encErr := actionrpc.EncodeResult(Result{Req: *req, Res: res, RT: time.Since(start), Status: 1})
+	ret, encErr := sdk.EncodeResult(Result{Req: *req, Res: res, RT: time.Since(start), Status: 1})
 	if encErr != nil {
 		return map[string]any{}, nil, encErr
 	}

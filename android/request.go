@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mozership/probe-android/internal/uitree"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 // DefaultTimeout bounds the actions of a step that sets no timeout.
@@ -66,7 +66,7 @@ var kinds = map[string]kind{
 
 // Params returns the keys the action takes in with.
 func Params() []string {
-	return append(actionrpc.ParamNames(Req{}), "timeout")
+	return append(sdk.ParamNames(Req{}), "timeout")
 }
 
 // parseReq reads the with of a step, and checks every action before any
@@ -76,11 +76,11 @@ func parseReq(with map[string]any) (*Req, error) {
 	if err := checkActionKeys(with["actions"]); err != nil {
 		return nil, err
 	}
-	if err := actionrpc.DecodeParams(with, req); err != nil {
+	if err := sdk.DecodeParams(with, req); err != nil {
 		return nil, err
 	}
 	if v, ok := with["timeout"]; ok {
-		d, err := actionrpc.ParseTimeout(v)
+		d, err := sdk.ParseTimeout(v)
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +101,7 @@ func parseReq(with map[string]any) (*Req, error) {
 }
 
 // actionKeys are the keys an entry of actions takes.
-var actionKeys = actionrpc.ParamNames(Action{})
+var actionKeys = sdk.ParamNames(Action{})
 
 // checkActionKeys refuses a key an entry of actions does not take, such as
 // args of the ios action, which would otherwise go unread.
